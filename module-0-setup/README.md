@@ -1,263 +1,657 @@
-# Module 0: Setup & Prerequisites
+# Module 0: Prerequisites and Setup
 
-**Time Required: 30 minutes**
-
-Before building our DevOps chatbot, we need to set up our development environment. This module ensures everything is working correctly.
+Welcome to Module 0! Before we build our DevOps troubleshooting chatbot, we need to set up our development environment. This module explains **everything from scratch** - even if you've never programmed before, you'll be able to follow along.
 
 ---
 
-## Learning Objectives
+## Table of Contents
 
-By the end of this module, you will:
-- Have Python 3.9+ installed and working
-- Have all required packages installed
-- Have an OpenAI API key configured (or Ollama running)
-- Understand the project structure
-- Be ready to start building!
+1. [Understanding the Basics](#understanding-the-basics)
+   - [What is Python?](#what-is-python)
+   - [What is an API?](#what-is-an-api)
+   - [What is OpenAI?](#what-is-openai)
+   - [What is an API Key?](#what-is-an-api-key)
+   - [What is a Virtual Environment?](#what-is-a-virtual-environment)
+2. [Installing Python](#installing-python)
+   - [Windows (using Chocolatey)](#windows-using-chocolatey)
+   - [macOS (using Homebrew)](#macos-using-homebrew)
+   - [Linux](#linux)
+3. [Setting Up Virtual Environment with uv](#setting-up-virtual-environment-with-uv)
+4. [Getting Your OpenAI API Key](#getting-your-openai-api-key)
+5. [Project Setup](#project-setup)
+6. [Verification](#verification)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Step 1: Check Python Version
+## Understanding the Basics
 
-We need Python 3.9 or higher.
+Before we dive into installation, let's understand what all these terms mean.
 
-```bash
-python --version
-# Should show: Python 3.9.x or higher
+### What is Python?
+
+**Python** is a programming language - a way to give instructions to your computer. Think of it like learning a new language to communicate with your computer.
+
+```
+Human Language:    "Add 5 and 3, then show me the result"
+Python:            print(5 + 3)
+Computer Output:   8
 ```
 
-**If you don't have Python 3.9+:**
-- Download from [python.org](https://www.python.org/downloads/)
-- Or use pyenv: `pyenv install 3.11`
+Why Python for AI/ML?
+- **Easy to read** - Python code looks almost like English
+- **Huge ecosystem** - Thousands of pre-built tools for AI
+- **Industry standard** - Most AI/ML projects use Python
+
+### What is an API?
+
+**API** stands for **Application Programming Interface**. It's a way for different software programs to talk to each other.
+
+```
+REAL-WORLD ANALOGY: Restaurant
+================================
+
+You (Customer)  →  Waiter (API)  →  Kitchen (Server/Service)
+     ↑                                      |
+     |              Your Food               |
+     +←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←+
+
+- You don't go into the kitchen yourself
+- You tell the waiter what you want (API Request)
+- The kitchen prepares it (Processing)
+- The waiter brings it back (API Response)
+```
+
+**In programming terms:**
+
+```
+Your Code  →  API Request  →  OpenAI Servers
+    ↑                              |
+    |         AI Response          |
+    +←←←←←←←←←←←←←←←←←←←←←←←←←←←←←+
+
+Example API Request:
+  "What is Kubernetes?"
+
+Example API Response:
+  "Kubernetes is an open-source container orchestration platform..."
+```
+
+**Types of APIs you'll encounter:**
+
+| API Type | Example | What It Does |
+|----------|---------|--------------|
+| REST API | OpenAI API | Send/receive data over the internet |
+| Library API | Python's `os` module | Use pre-built code in your program |
+| Hardware API | Webcam access | Control physical devices |
+
+### What is OpenAI?
+
+**OpenAI** is a company that created ChatGPT and provides AI services through their API.
+
+```
+OPENAI PRODUCTS
+===============
+
+ChatGPT (Website)          OpenAI API (For Developers)
+    ↓                              ↓
+┌─────────────┐            ┌─────────────────────┐
+│ You type in │            │ Your code sends     │
+│ a chat box  │            │ requests and gets   │
+│ on website  │            │ responses back      │
+└─────────────┘            └─────────────────────┘
+
+Same AI models, different interfaces!
+```
+
+**OpenAI offers several models:**
+
+| Model | Best For | Cost |
+|-------|----------|------|
+| GPT-4o | Complex reasoning, coding | Higher |
+| GPT-4o-mini | General tasks, good balance | Medium |
+| GPT-3.5-turbo | Simple tasks, fastest | Lower |
+
+### What is an API Key?
+
+An **API Key** is like a password that identifies you to a service. It's how OpenAI knows:
+1. **Who you are** - Links requests to your account
+2. **What you can access** - Your subscription level
+3. **How much to charge** - Tracks your usage
+
+```
+API KEY ANATOMY
+===============
+
+sk-proj-abc123xyz789...
+│  │    │
+│  │    └── Unique identifier (like a password)
+│  └─────── Type: "proj" = project key
+└────────── Prefix: "sk" = secret key
+
+IMPORTANT SECURITY RULES:
+✗ NEVER share your API key publicly
+✗ NEVER commit it to Git/GitHub
+✗ NEVER paste it in code files
+✓ Always use environment variables (.env files)
+✓ Always add .env to .gitignore
+```
+
+**What happens if your key is leaked?**
+- Someone could use your key
+- You get charged for their usage
+- OpenAI may disable your key
+
+### What is a Virtual Environment?
+
+A **Virtual Environment** is an isolated space for your Python project. Think of it as a separate room for each project.
+
+```
+WITHOUT VIRTUAL ENVIRONMENTS (BAD)
+===================================
+
+Your Computer
+├── Python
+├── Package A v1.0  ←── Project 1 needs this
+├── Package A v2.0  ←── Project 2 needs this (CONFLICT!)
+└── Package B v1.5
+
+Problem: Project 1 and Project 2 need different versions!
+
+
+WITH VIRTUAL ENVIRONMENTS (GOOD)
+=================================
+
+Your Computer
+├── Python
+├── Project 1/
+│   └── .venv/
+│       ├── Package A v1.0  ✓ Isolated!
+│       └── Package B v1.5
+│
+└── Project 2/
+    └── .venv/
+        ├── Package A v2.0  ✓ Isolated!
+        └── Package C v3.0
+
+Each project has its own packages - no conflicts!
+```
 
 ---
 
-## Step 2: Create Virtual Environment
+## Installing Python
 
-A virtual environment keeps project dependencies isolated.
+### Windows (using Chocolatey)
+
+**Chocolatey** is a package manager for Windows - it lets you install software from the command line (like an app store for developers).
+
+#### Step 1: Install Chocolatey
+
+1. **Open PowerShell as Administrator:**
+   - Press `Windows + X`
+   - Click "Windows Terminal (Admin)" or "PowerShell (Admin)"
+
+2. **Run the installation command:**
+   ```powershell
+   Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+   ```
+
+3. **Verify installation:**
+   ```powershell
+   choco --version
+   ```
+   You should see something like `2.2.2`
+
+#### Step 2: Install Python
+
+```powershell
+# Install Python 3.11 (recommended for this project)
+choco install python311 -y
+
+# Close and reopen your terminal, then verify
+python --version
+```
+
+You should see: `Python 3.11.x`
+
+#### Alternative: Direct Download (if Chocolatey doesn't work)
+
+1. Go to https://www.python.org/downloads/
+2. Download Python 3.11.x
+3. Run the installer
+4. **IMPORTANT:** Check "Add Python to PATH" during installation
+
+---
+
+### macOS (using Homebrew)
+
+**Homebrew** is the most popular package manager for macOS - it's like Chocolatey but for Mac.
+
+#### Step 1: Install Homebrew
+
+1. **Open Terminal:**
+   - Press `Cmd + Space`
+   - Type "Terminal"
+   - Press Enter
+
+2. **Run the installation command:**
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+3. **Follow the instructions** - you may need to run additional commands shown at the end
+
+4. **Verify installation:**
+   ```bash
+   brew --version
+   ```
+
+#### Step 2: Install Python
 
 ```bash
-# Navigate to project root
+# Install Python 3.11
+brew install python@3.11
+
+# Verify installation
+python3 --version
+```
+
+You should see: `Python 3.11.x`
+
+---
+
+### Linux
+
+Most Linux distributions come with Python. If not:
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install python3.11 python3.11-venv python3-pip
+```
+
+**Fedora:**
+```bash
+sudo dnf install python3.11
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S python
+```
+
+Verify:
+```bash
+python3 --version
+```
+
+---
+
+## Setting Up Virtual Environment with uv
+
+**uv** is a modern, fast Python package manager. It's much faster than pip and easier to use than conda.
+
+### Why uv instead of pip?
+
+| Feature | pip | uv |
+|---------|-----|-----|
+| Speed | Slow (installs one by one) | Fast (10-100x faster) |
+| Lock files | Manual | Automatic |
+| Virtual envs | Separate tool needed | Built-in |
+| Dependency resolution | Can fail | More reliable |
+
+### Step 1: Install uv
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**macOS/Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Verify installation:**
+```bash
+uv --version
+```
+
+### Step 2: Create a Virtual Environment
+
+```bash
+# Navigate to your project directory
 cd devops-troubleshooting-chatbot
 
-# Create virtual environment
-python -m venv venv
+# Create virtual environment with uv
+uv venv
 
-# Activate it
-# On Linux/Mac:
-source venv/bin/activate
-
-# On Windows:
-.\venv\Scripts\activate
-
-# You should see (venv) in your terminal prompt
+# This creates a .venv folder in your project
 ```
 
----
+### Step 3: Activate the Virtual Environment
 
-## Step 3: Install Dependencies
+**Windows (PowerShell):**
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+**Windows (Command Prompt):**
+```cmd
+.\.venv\Scripts\activate.bat
+```
+
+**macOS/Linux:**
+```bash
+source .venv/bin/activate
+```
+
+When activated, you'll see `(.venv)` at the start of your prompt:
+```
+(.venv) C:\Users\you\devops-troubleshooting-chatbot>
+```
+
+### Step 4: Install Dependencies
 
 ```bash
+# With uv (recommended - much faster)
+uv pip install -r requirements.txt
+
+# Or with regular pip (slower but also works)
 pip install -r requirements.txt
 ```
 
-This installs:
-| Package | Purpose |
-|---------|---------|
-| `openai` | OpenAI API client |
-| `langchain` | LLM application framework |
-| `chromadb` | Vector database |
-| `sentence-transformers` | Local embeddings |
-| `rich` | Beautiful terminal output |
-
----
-
-## Step 4: Get Your OpenAI API Key
-
-### Option A: OpenAI (Recommended for best results)
-
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Sign up or log in
-3. Navigate to API Keys section
-4. Click "Create new secret key"
-5. Copy the key (starts with `sk-`)
-
-**Cost:**
-- GPT-3.5-turbo: ~$0.002 per 1K tokens
-- For this course: expect $1-5 total
-
-### Option B: Ollama (Free, Local)
-
-1. Download Ollama from [ollama.ai](https://ollama.ai)
-2. Install it on your system
-3. Pull a model:
-   ```bash
-   ollama pull llama2
-   # Or for better results:
-   ollama pull mistral
-   ```
-
----
-
-## Step 5: Configure Environment
+### Step 5: Deactivate When Done
 
 ```bash
-# Copy the example environment file
+deactivate
+```
+
+---
+
+## Getting Your OpenAI API Key
+
+### Step 1: Create an OpenAI Account
+
+1. Go to https://platform.openai.com/signup
+2. Sign up with email or Google/Microsoft account
+3. Verify your email
+
+### Step 2: Add Payment Method (Required for API)
+
+1. Go to https://platform.openai.com/account/billing
+2. Click "Add payment method"
+3. Add a credit/debit card
+
+**Note:** OpenAI charges based on usage. For learning:
+- GPT-3.5-turbo: ~$0.002 per 1K tokens (~750 words)
+- You can set usage limits to avoid surprises
+
+### Step 3: Create an API Key
+
+1. Go to https://platform.openai.com/api-keys
+2. Click "Create new secret key"
+3. Give it a name (e.g., "devops-chatbot")
+4. **IMPORTANT:** Copy the key immediately - you can't see it again!
+
+```
+Your key will look like:
+sk-proj-aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789...
+```
+
+### Step 4: Store Your API Key Safely
+
+**NEVER put your API key directly in code!**
+
+Create a `.env` file in your project:
+
+```bash
+# Copy the example file
 cp .env.example .env
 
-# Edit .env with your settings
-# On Linux/Mac:
-nano .env
-# Or on Windows, use notepad or VS Code
+# Edit .env and add your key
 ```
 
-**For OpenAI users:**
+Edit `.env`:
 ```env
-OPENAI_API_KEY=sk-your-actual-key-here
+# Your OpenAI API key (get it from platform.openai.com/api-keys)
+OPENAI_API_KEY=sk-proj-your-actual-key-here
+
+# Model to use (gpt-3.5-turbo is cheapest, gpt-4o-mini is better)
 OPENAI_MODEL=gpt-3.5-turbo
-USE_OLLAMA=false
 ```
 
-**For Ollama users:**
+### Alternative: Using Ollama (Free, Local)
+
+If you don't want to pay for OpenAI, you can use **Ollama** to run AI models locally on your computer.
+
+**Install Ollama:**
+- Windows/Mac: Download from https://ollama.ai
+- Linux: `curl -fsSL https://ollama.ai/install.sh | sh`
+
+**Pull a model:**
+```bash
+ollama pull llama2
+# or for better results:
+ollama pull mistral
+```
+
+**Configure `.env` for Ollama:**
 ```env
 USE_OLLAMA=true
 OLLAMA_MODEL=llama2
-OPENAI_API_KEY=not-needed
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 ---
 
-## Step 6: Verify Setup
+## Project Setup
 
-Run the verification script:
+### Complete Setup Steps
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/techlearn-center/devops-troubleshooting-chatbot.git
+cd devops-troubleshooting-chatbot
+
+# 2. Create virtual environment
+uv venv
+
+# 3. Activate virtual environment
+# Windows:
+.\.venv\Scripts\Activate.ps1
+# macOS/Linux:
+source .venv/bin/activate
+
+# 4. Install dependencies
+uv pip install -r requirements.txt
+
+# 5. Create .env file
+cp .env.example .env
+
+# 6. Edit .env and add your API key
+# Use your favorite editor (notepad, vim, nano, VS Code)
+
+# 7. Run verification
+python module-0-setup/verify_setup.py
+```
+
+---
+
+## Verification
+
+Run the verification script to check everything is set up correctly:
 
 ```bash
 python module-0-setup/verify_setup.py
 ```
 
-**Expected Output:**
+**Expected output:**
 ```
-============================================
+==================================================
   DevOps Chatbot - Setup Verification
-============================================
+==================================================
 
 [1/6] Checking Python version...
-  ✓ Python 3.11.0
+  ✓ Python 3.11.5
 
 [2/6] Checking required packages...
   ✓ openai installed
   ✓ langchain installed
   ✓ chromadb installed
   ✓ sentence-transformers installed
+  ✓ python-dotenv installed
+  ✓ rich installed
 
 [3/6] Checking environment variables...
   ✓ .env file found
   ✓ OPENAI_API_KEY configured
 
-[4/6] Testing OpenAI connection...
+[4/6] Testing LLM connection...
   ✓ Successfully connected to OpenAI
 
 [5/6] Testing embeddings...
-  ✓ Embedding model loaded
+  ✓ Local embedding model loaded (all-MiniLM-L6-v2)
 
 [6/6] Testing ChromaDB...
   ✓ ChromaDB working
 
-============================================
+==================================================
   ✓ All checks passed! You're ready to go!
-============================================
+==================================================
 ```
 
 ---
 
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'xxx'"
+### "Python not found" / "python is not recognized"
 
-```bash
-# Make sure virtual environment is activated
-source venv/bin/activate  # Linux/Mac
-.\venv\Scripts\activate   # Windows
+**Windows:**
+```powershell
+# Check if Python is in PATH
+where python
 
-# Reinstall dependencies
-pip install -r requirements.txt
+# If not found, reinstall with Chocolatey
+choco uninstall python311
+choco install python311 -y
+
+# Or add manually to PATH:
+# 1. Search "Environment Variables" in Windows
+# 2. Edit PATH
+# 3. Add: C:\Python311\ and C:\Python311\Scripts\
 ```
 
-### "OpenAI API error: Invalid API key"
-
-1. Check your API key is correct in `.env`
-2. Make sure there are no extra spaces
-3. Verify the key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
-
-### "Ollama connection refused"
-
+**macOS:**
 ```bash
-# Make sure Ollama is running
-ollama serve
+# Use python3 instead of python
+python3 --version
 
-# In another terminal, verify
-ollama list
+# Create an alias (add to ~/.zshrc or ~/.bashrc)
+alias python=python3
 ```
 
-### "ChromaDB error"
+### "pip not found"
 
 ```bash
-# Delete the database and start fresh
-rm -rf chroma_db/
+# Try pip3
+pip3 --version
+
+# Or use Python's pip module
+python -m pip --version
+
+# Install pip if missing
+python -m ensurepip --upgrade
+```
+
+### "Permission denied" on macOS/Linux
+
+```bash
+# Don't use sudo with pip! Use virtual environment instead
+# If you must install globally:
+pip install --user package-name
+```
+
+### "uv: command not found"
+
+**Windows:** Close and reopen PowerShell after installing uv
+
+**macOS/Linux:** Add to your shell config:
+```bash
+# For bash (add to ~/.bashrc)
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# For zsh (add to ~/.zshrc)
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Then reload
+source ~/.bashrc  # or ~/.zshrc
+```
+
+### OpenAI API Errors
+
+**"Invalid API key":**
+- Double-check your key in `.env`
+- Make sure there are no extra spaces
+- Ensure the key starts with `sk-`
+
+**"Insufficient quota":**
+- Add payment method at platform.openai.com/account/billing
+- Check your usage limits
+
+**"Rate limit exceeded":**
+- Wait a minute and try again
+- You're making too many requests too quickly
+
+### Virtual Environment Issues
+
+**"Activate script not found":**
+```bash
+# Make sure you're in the project directory
+cd devops-troubleshooting-chatbot
+
+# Recreate the virtual environment
+rm -rf .venv
+uv venv
+```
+
+**Packages not found after activation:**
+```bash
+# Make sure you're in the virtual environment
+# You should see (.venv) in your prompt
+
+# Reinstall packages
+uv pip install -r requirements.txt
 ```
 
 ---
 
-## Understanding the Project Structure
+## Glossary
 
-```
-devops-troubleshooting-chatbot/
-│
-├── module-X-*/           # Learning modules (work through in order)
-│   ├── README.md         # Instructions and explanations
-│   ├── exercises/        # Your work goes here
-│   └── solutions/        # Reference solutions
-│
-├── knowledge-base/       # DevOps documentation for RAG
-│   ├── terraform/        # Terraform error docs
-│   ├── kubernetes/       # K8s troubleshooting
-│   ├── docker/           # Docker issues
-│   └── cicd/             # CI/CD pipeline help
-│
-├── chatbot/              # Final chatbot code
-│   ├── main.py           # Entry point
-│   ├── rag_engine.py     # RAG implementation
-│   └── prompts.py        # Prompt templates
-│
-├── .env                  # Your configuration (git-ignored)
-├── .env.example          # Configuration template
-├── requirements.txt      # Python dependencies
-└── run.py                # Auto-grading script
-```
+| Term | Definition |
+|------|------------|
+| **API** | Application Programming Interface - a way for programs to communicate |
+| **API Key** | A secret password that authenticates you to an API service |
+| **Chocolatey** | Package manager for Windows |
+| **Homebrew** | Package manager for macOS |
+| **LLM** | Large Language Model - AI that understands and generates text |
+| **OpenAI** | Company that provides GPT models via API |
+| **pip** | Python's default package installer |
+| **Python** | Programming language used in this project |
+| **RAG** | Retrieval-Augmented Generation - enhancing AI with external knowledge |
+| **Token** | Unit of text (roughly 4 characters or 0.75 words) |
+| **uv** | Fast, modern Python package manager |
+| **venv** | Python virtual environment |
 
 ---
 
-## What's Next?
+## Next Steps
 
-Once verification passes, you're ready for **Module 1: LLM Fundamentals**!
+Once all checks pass, you're ready to move on to:
 
-```bash
-cd ../module-1-llm-basics
-```
+**[Module 1: LLM Fundamentals →](../module-1-llm-basics/README.md)**
 
-In Module 1, you'll learn:
-- How Large Language Models work
+You'll learn:
+- How LLMs work (tokens, context, temperature)
 - Making your first API call
-- Understanding tokens and parameters
-
----
-
-## Quick Reference
-
-| Command | Purpose |
-|---------|---------|
-| `source venv/bin/activate` | Activate virtual environment (Linux/Mac) |
-| `.\venv\Scripts\activate` | Activate virtual environment (Windows) |
-| `pip install -r requirements.txt` | Install dependencies |
-| `python module-0-setup/verify_setup.py` | Verify setup |
-| `python run.py` | Run auto-grader |
+- Understanding responses and errors
