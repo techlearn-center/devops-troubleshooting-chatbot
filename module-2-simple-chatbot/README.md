@@ -1,610 +1,875 @@
 # Module 2: Building a Simple Chatbot
 
-**Time Required: 1.5 hours**
-
-Now that you understand LLM basics, let's build a proper chatbot with conversation history and a user-friendly interface.
+Welcome to Module 2! Now that you understand how LLMs work, let's build a real chatbot that can have multi-turn conversations. We'll explain every concept from scratch.
 
 ---
 
-## Learning Objectives
+## Table of Contents
 
-By the end of this module, you will:
-- Build a chatbot that remembers conversation history
-- Create a CLI interface with rich formatting
-- Handle errors gracefully
-- Implement streaming responses
-- Understand the importance of context management
-
----
-
-## Why Conversation History Matters
-
-Without history, every message is isolated:
-
-```
-User: What is Terraform?
-Bot: Terraform is an IaC tool for provisioning infrastructure.
-
-User: How do I install it?
-Bot: I don't know what "it" refers to. Please be more specific.
-     ^^^ BAD - Lost context!
-```
-
-With history:
-
-```
-User: What is Terraform?
-Bot: Terraform is an IaC tool for provisioning infrastructure.
-
-User: How do I install it?
-Bot: To install Terraform:
-     1. Download from terraform.io
-     2. Add to PATH...
-     ^^^ GOOD - Remembers we're talking about Terraform!
-```
+1. [What is a Chatbot?](#what-is-a-chatbot)
+   - [Single Q&A vs Chatbot](#single-qa-vs-chatbot)
+   - [What Makes a Good Chatbot?](#what-makes-a-good-chatbot)
+2. [Understanding Conversation History](#understanding-conversation-history)
+   - [Why History Matters](#why-history-matters)
+   - [How to Maintain History](#how-to-maintain-history)
+3. [Python Classes Explained](#python-classes-explained)
+   - [What is a Class?](#what-is-a-class)
+   - [Why Use Classes for Chatbots?](#why-use-classes-for-chatbots)
+4. [Building the CLI Interface](#building-the-cli-interface)
+   - [What is a CLI?](#what-is-a-cli)
+   - [The Rich Library](#the-rich-library)
+5. [Streaming Responses](#streaming-responses)
+   - [What is Streaming?](#what-is-streaming)
+   - [Why Use Streaming?](#why-use-streaming)
+6. [Error Handling](#error-handling)
+   - [What Can Go Wrong?](#what-can-go-wrong)
+   - [Exponential Backoff](#exponential-backoff)
+7. [Context Window Management](#context-window-management)
+8. [Hands-On Exercises](#hands-on-exercises)
+9. [Key Takeaways](#key-takeaways)
 
 ---
 
-## How Conversation History Works
+## What is a Chatbot?
 
-The LLM doesn't have memory - **you** must send the full history:
+### Single Q&A vs Chatbot
+
+In Module 1, we made single API calls - ask a question, get an answer. A **chatbot** is different: it maintains a conversation over multiple exchanges.
+
+```
+SINGLE Q&A (Module 1)
+=====================
+
+Call 1: "What is Terraform?" → "Terraform is an IaC tool..."
+Call 2: "How do I install it?" → "Install what? Please specify."
+                                   ↑
+                                   PROBLEM: No memory of previous question!
+
+
+CHATBOT (Module 2)
+==================
+
+Exchange 1:
+  User: "What is Terraform?"
+  Bot:  "Terraform is an IaC tool for provisioning infrastructure..."
+
+Exchange 2:
+  User: "How do I install it?"
+  Bot:  "To install Terraform:        ← Knows "it" = Terraform!
+         1. Download from terraform.io
+         2. Unzip the binary
+         3. Add to your PATH..."
+
+Exchange 3:
+  User: "What about on Mac?"
+  Bot:  "On Mac, you can also use:    ← Remembers the topic!
+         brew install terraform"
+```
+
+### What Makes a Good Chatbot?
+
+```
+GOOD CHATBOT CHARACTERISTICS
+============================
+
+1. REMEMBERS CONTEXT
+   ┌─────────────────────────────────────────┐
+   │ Tracks conversation history             │
+   │ Understands pronouns ("it", "that")     │
+   │ Builds on previous answers              │
+   └─────────────────────────────────────────┘
+
+2. HANDLES ERRORS GRACEFULLY
+   ┌─────────────────────────────────────────┐
+   │ Doesn't crash on network issues         │
+   │ Retries failed requests                 │
+   │ Shows helpful error messages            │
+   └─────────────────────────────────────────┘
+
+3. PROVIDES GOOD USER EXPERIENCE
+   ┌─────────────────────────────────────────┐
+   │ Shows when it's "thinking"              │
+   │ Formats responses nicely                │
+   │ Streams long responses                  │
+   └─────────────────────────────────────────┘
+
+4. MANAGES RESOURCES
+   ┌─────────────────────────────────────────┐
+   │ Stays within token limits               │
+   │ Doesn't waste API credits               │
+   │ Handles long conversations              │
+   └─────────────────────────────────────────┘
+```
+
+---
+
+## Understanding Conversation History
+
+### Why History Matters
+
+The LLM has **no memory** between API calls. Every call is independent. To create a conversation, **you** must send the full history each time.
+
+```
+HOW CONVERSATION HISTORY WORKS
+==============================
+
+Without History (Each call is isolated):
+────────────────────────────────────────
+
+Call 1: messages = [user: "What is Docker?"]
+        → "Docker is a containerization platform..."
+
+Call 2: messages = [user: "How do I install it?"]
+        → "Please specify what you want to install."
+           ↑ LLM doesn't know we were talking about Docker!
+
+
+With History (Context is preserved):
+────────────────────────────────────
+
+Call 1: messages = [
+          system: "You are a DevOps assistant.",
+          user: "What is Docker?"
+        ]
+        → "Docker is a containerization platform..."
+
+Call 2: messages = [
+          system: "You are a DevOps assistant.",
+          user: "What is Docker?",
+          assistant: "Docker is a containerization platform...",  ← Previous exchange
+          user: "How do I install it?"                            ← New question
+        ]
+        → "To install Docker on your system..."
+           ↑ LLM sees the full conversation!
+```
+
+### How to Maintain History
 
 ```python
-# First message
+# Initialize with system prompt
 messages = [
-    {"role": "system", "content": "You are a DevOps assistant."},
-    {"role": "user", "content": "What is Terraform?"}
+    {"role": "system", "content": "You are a DevOps assistant."}
 ]
-response1 = call_llm(messages)  # "Terraform is..."
 
-# Add response to history
-messages.append({"role": "assistant", "content": response1})
+# User asks first question
+user_input = "What is Docker?"
+messages.append({"role": "user", "content": user_input})
 
-# Second message - includes full history!
-messages.append({"role": "user", "content": "How do I install it?"})
-response2 = call_llm(messages)  # Knows "it" = Terraform
+# Get response from LLM
+response = call_llm(messages)  # "Docker is a containerization..."
+
+# Add assistant's response to history
+messages.append({"role": "assistant", "content": response})
+
+# User asks follow-up
+user_input = "How do I install it?"
+messages.append({"role": "user", "content": user_input})
+
+# Call LLM again - it now has full context!
+response = call_llm(messages)  # "To install Docker..."
 ```
 
+**Visual representation of growing history:**
+
 ```
-Messages sent to LLM for second question:
-+--------------------------------------------------+
-| [system] You are a DevOps assistant.             |
-| [user] What is Terraform?                        |
-| [assistant] Terraform is an IaC tool...          |  <- History
-| [user] How do I install it?                      |  <- New question
-+--------------------------------------------------+
+MESSAGE HISTORY GROWTH
+======================
+
+After Exchange 1:
+┌─────────────────────────────────────────────────┐
+│ [system] You are a DevOps assistant.            │
+│ [user] What is Docker?                          │
+│ [assistant] Docker is a containerization...     │
+└─────────────────────────────────────────────────┘
+
+After Exchange 2:
+┌─────────────────────────────────────────────────┐
+│ [system] You are a DevOps assistant.            │
+│ [user] What is Docker?                          │
+│ [assistant] Docker is a containerization...     │
+│ [user] How do I install it?                     │  ← Growing!
+│ [assistant] To install Docker...                │
+└─────────────────────────────────────────────────┘
+
+After Exchange 5:
+┌─────────────────────────────────────────────────┐
+│ [system] You are a DevOps assistant.            │
+│ [user] What is Docker?                          │
+│ [assistant] Docker is a containerization...     │
+│ [user] How do I install it?                     │
+│ [assistant] To install Docker...                │
+│ [user] What about on Mac?                       │
+│ [assistant] On Mac, use: brew install docker... │  ← More growth!
+│ [user] How do I run my first container?         │
+│ [assistant] Try: docker run hello-world...      │
+│ [user] What does that command do?               │
+│ [assistant] The docker run command...           │
+└─────────────────────────────────────────────────┘
+
+⚠️ WARNING: This keeps growing!
+   Eventually hits the token limit (context window).
+   We'll learn to manage this later in this module.
 ```
 
 ---
 
-## Exercise 1: Basic Chatbot with History
+## Python Classes Explained
 
-Create `exercises/ex1_chatbot_history.py`:
+Our chatbot code uses Python **classes**. If you're not familiar with classes, here's a quick explanation.
+
+### What is a Class?
+
+A **class** is a blueprint for creating objects. It bundles data (attributes) and functions (methods) together.
 
 ```python
-"""
-Exercise 1: Chatbot with Conversation History
-=============================================
-Goal: Build a chatbot that remembers previous messages
-"""
+# WITHOUT CLASSES (messy, hard to manage)
+# =======================================
 
-import os
-from dotenv import load_dotenv
-from openai import OpenAI
+messages1 = []  # For chatbot 1
+messages2 = []  # For chatbot 2
 
-load_dotenv()
-client = OpenAI()
+def chat1(user_input):
+    global messages1  # Messy!
+    messages1.append({"role": "user", "content": user_input})
+    # ... call LLM ...
 
-# System prompt for our DevOps chatbot
-SYSTEM_PROMPT = """You are an expert DevOps assistant specializing in:
-- Terraform and Infrastructure as Code
-- Kubernetes and container orchestration
-- Docker and containerization
-- CI/CD pipelines (GitHub Actions, Jenkins, GitLab CI)
-- Cloud platforms (AWS, GCP, Azure)
-
-Guidelines:
-1. Be concise but thorough
-2. Include code examples when helpful
-3. Suggest best practices
-4. Ask clarifying questions if needed
-"""
+def chat2(user_input):
+    global messages2  # More mess!
+    messages2.append({"role": "user", "content": user_input})
+    # ... call LLM ...
 
 
-class SimpleChatbot:
-    """A simple chatbot with conversation history."""
+# WITH CLASSES (clean, organized)
+# ===============================
 
-    def __init__(self, system_prompt: str = SYSTEM_PROMPT):
-        """Initialize the chatbot with a system prompt."""
+class Chatbot:
+    def __init__(self):
+        """Called when you create a new Chatbot."""
+        self.messages = []  # Each chatbot has its OWN messages
+
+    def chat(self, user_input):
+        """Send a message and get response."""
+        self.messages.append({"role": "user", "content": user_input})
+        # ... call LLM ...
+
+# Create two separate chatbots - each with its own history!
+bot1 = Chatbot()
+bot2 = Chatbot()
+
+bot1.chat("What is Docker?")   # bot1 has its own messages
+bot2.chat("What is Terraform?")  # bot2 has its own messages
+```
+
+### Why Use Classes for Chatbots?
+
+```
+BENEFITS OF CLASSES
+===================
+
+1. ENCAPSULATION
+   Each chatbot instance has its own:
+   - messages (conversation history)
+   - settings (model, temperature)
+   - state (is it busy? how many tokens used?)
+
+2. CLEAN CODE
+   class Chatbot:
+       def chat(self, message):     # Main functionality
+       def clear_history(self):     # Helper method
+       def count_tokens(self):      # Another helper
+
+3. REUSABILITY
+   # Create different chatbots with different personalities
+   devops_bot = Chatbot(system_prompt="You are a DevOps expert...")
+   python_bot = Chatbot(system_prompt="You are a Python expert...")
+
+4. TESTABILITY
+   # Easy to test in isolation
+   def test_chatbot():
+       bot = Chatbot()
+       response = bot.chat("Hello")
+       assert response is not None
+```
+
+**Class Anatomy:**
+
+```python
+class Chatbot:
+    """
+    A class is defined with the 'class' keyword.
+    By convention, class names use CamelCase.
+    """
+
+    def __init__(self, system_prompt="You are helpful."):
+        """
+        __init__ is the CONSTRUCTOR - called when creating a new instance.
+        'self' refers to the instance being created.
+        """
+        # 'self.messages' is an ATTRIBUTE - data stored in the object
         self.messages = [
             {"role": "system", "content": system_prompt}
         ]
 
-    def chat(self, user_message: str) -> str:
+    def chat(self, user_input):
         """
-        Send a message and get a response.
-
-        Args:
-            user_message: The user's input
-
-        Returns:
-            The assistant's response
+        This is a METHOD - a function that belongs to the class.
+        'self' is always the first parameter (refers to the instance).
         """
-        # TODO: Implement this method
-        # 1. Add user message to history
-        # 2. Call the LLM with full history
-        # 3. Add assistant response to history
-        # 4. Return the response
-        pass
+        self.messages.append({"role": "user", "content": user_input})
+        # ... get response ...
+        return response
 
     def clear_history(self):
-        """Clear conversation history (keep system prompt)."""
+        """Another method - clears everything except system prompt."""
         self.messages = [self.messages[0]]
 
 
-def main():
-    """Run the chatbot in a loop."""
-    print("DevOps Chatbot (type 'quit' to exit, 'clear' to reset)")
-    print("=" * 50)
+# USING THE CLASS:
+# ================
 
-    chatbot = SimpleChatbot()
+# Create an INSTANCE of the class
+bot = Chatbot(system_prompt="You are a DevOps assistant.")
 
-    while True:
-        user_input = input("\nYou: ").strip()
+# Call METHODS on the instance
+response = bot.chat("What is Kubernetes?")
 
-        if user_input.lower() == 'quit':
-            print("Goodbye!")
-            break
-        elif user_input.lower() == 'clear':
-            chatbot.clear_history()
-            print("Conversation cleared.")
-            continue
-        elif not user_input:
-            continue
+# Access ATTRIBUTES
+print(len(bot.messages))  # How many messages in history?
 
-        response = chatbot.chat(user_input)
-        print(f"\nBot: {response}")
-
-
-if __name__ == "__main__":
-    main()
+# Call another method
+bot.clear_history()
 ```
 
 ---
 
-## Exercise 2: Rich CLI Interface
+## Building the CLI Interface
 
-Let's make the chatbot look better using the `rich` library.
+### What is a CLI?
 
-Create `exercises/ex2_rich_interface.py`:
+A **CLI (Command Line Interface)** is a text-based interface where users type commands and see text output. It's the opposite of a GUI (Graphical User Interface) with buttons and windows.
+
+```
+CLI vs GUI
+==========
+
+CLI (What we're building):
+┌────────────────────────────────────────────────────┐
+│ $ python chatbot.py                                │
+│                                                    │
+│ DevOps Chatbot - Type 'quit' to exit               │
+│ ─────────────────────────────────────              │
+│                                                    │
+│ You: What is a Kubernetes pod?                     │
+│                                                    │
+│ Bot: A pod is the smallest deployable unit in     │
+│      Kubernetes. It can contain one or more       │
+│      containers that share storage and network.   │
+│                                                    │
+│ You: _                                             │
+└────────────────────────────────────────────────────┘
+
+GUI (Like ChatGPT website):
+┌────────────────────────────────────────────────────┐
+│  [Logo]  ChatGPT           [New Chat] [Settings]   │
+├────────────────────────────────────────────────────┤
+│                                                    │
+│  ┌──────────────────────────────────────────────┐ │
+│  │ You: What is a Kubernetes pod?               │ │
+│  └──────────────────────────────────────────────┘ │
+│                                                    │
+│  ┌──────────────────────────────────────────────┐ │
+│  │ 🤖 A pod is the smallest deployable unit... │ │
+│  └──────────────────────────────────────────────┘ │
+│                                                    │
+│  ┌──────────────────────────────────────────────┐ │
+│  │ Type your message...              [Send ➤]  │ │
+│  └──────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────┘
+```
+
+**Why CLI for learning?**
+- Simpler to build (no web framework needed)
+- Focuses on the chatbot logic, not UI code
+- Easy to run and test
+- Foundation for other interfaces later
+
+### The Rich Library
+
+**Rich** is a Python library that makes CLI output beautiful. It adds colors, formatting, progress bars, and more.
+
+```
+PLAIN PYTHON vs RICH
+====================
+
+Plain Python print():
+┌────────────────────────────────────────────────────┐
+│ Bot: A Kubernetes pod is the smallest unit...      │
+│ It can contain one or more containers.             │
+│                                                    │
+│ Here is the command:                               │
+│ kubectl get pods                                   │
+└────────────────────────────────────────────────────┘
+Everything is plain text, hard to read.
+
+
+With Rich library:
+┌────────────────────────────────────────────────────┐
+│ ┌──────────────── DevOps Bot ────────────────┐    │
+│ │                                            │    │
+│ │ A Kubernetes **pod** is the smallest unit. │    │
+│ │ It can contain one or more containers.     │    │
+│ │                                            │    │
+│ │ Here is the command:                       │    │
+│ │ ┌────────────────────────────────────────┐ │    │
+│ │ │ kubectl get pods                       │ │    │
+│ │ └────────────────────────────────────────┘ │    │
+│ │                                            │    │
+│ └────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────┘
+Colors, borders, code blocks, markdown!
+```
+
+**Key Rich features we'll use:**
 
 ```python
-"""
-Exercise 2: Rich CLI Interface
-==============================
-Goal: Create a beautiful terminal interface
-"""
-
-import os
-from dotenv import load_dotenv
-from openai import OpenAI
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-load_dotenv()
-client = OpenAI()
 console = Console()
 
-SYSTEM_PROMPT = """You are an expert DevOps assistant.
-Format your responses using Markdown for better readability.
-Use code blocks with language specification for code examples."""
+# Colored text
+console.print("[bold green]Success![/bold green]")
+console.print("[red]Error occurred[/red]")
 
+# Panels (boxes around content)
+console.print(Panel("Hello World", title="Greeting"))
 
-class RichChatbot:
-    """Chatbot with rich terminal interface."""
+# Markdown rendering (code blocks, bold, lists)
+md = Markdown("**Bold** and `code` and\n```python\nprint('hi')\n```")
+console.print(md)
 
-    def __init__(self):
-        self.messages = [
-            {"role": "system", "content": SYSTEM_PROMPT}
-        ]
-        self.console = Console()
+# User input with styling
+name = Prompt.ask("[bold blue]Your name[/bold blue]")
 
-    def chat(self, user_message: str) -> str:
-        """Send a message and get a response."""
-        self.messages.append({"role": "user", "content": user_message})
-
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
-            messages=self.messages,
-            temperature=0.3,
-            max_tokens=1000
-        )
-
-        assistant_message = response.choices[0].message.content
-        self.messages.append({"role": "assistant", "content": assistant_message})
-
-        return assistant_message
-
-    def display_response(self, response: str):
-        """Display the response with rich formatting."""
-        # TODO: Use rich to display the response
-        # Hint: Use Markdown() and Panel()
-        pass
-
-    def run(self):
-        """Run the chatbot loop."""
-        self.console.print(Panel(
-            "[bold green]DevOps Troubleshooting Chatbot[/bold green]\n"
-            "Ask questions about Terraform, Kubernetes, Docker, and CI/CD.\n"
-            "Type [bold]'quit'[/bold] to exit, [bold]'clear'[/bold] to reset.",
-            title="Welcome",
-            border_style="green"
-        ))
-
-        while True:
-            try:
-                user_input = Prompt.ask("\n[bold blue]You[/bold blue]")
-
-                if user_input.lower() == 'quit':
-                    self.console.print("[yellow]Goodbye![/yellow]")
-                    break
-                elif user_input.lower() == 'clear':
-                    self.messages = [self.messages[0]]
-                    self.console.print("[yellow]Conversation cleared.[/yellow]")
-                    continue
-                elif not user_input.strip():
-                    continue
-
-                with self.console.status("[bold green]Thinking..."):
-                    response = self.chat(user_input)
-
-                self.display_response(response)
-
-            except KeyboardInterrupt:
-                self.console.print("\n[yellow]Interrupted. Goodbye![/yellow]")
-                break
-
-
-if __name__ == "__main__":
-    bot = RichChatbot()
-    bot.run()
+# Loading spinner
+with console.status("[green]Thinking..."):
+    # Do something slow
+    time.sleep(2)
 ```
 
 ---
 
-## Exercise 3: Streaming Responses
+## Streaming Responses
 
-For long responses, streaming provides a better experience:
+### What is Streaming?
+
+**Streaming** means receiving the response word-by-word as it's generated, instead of waiting for the complete response.
+
+```
+WITHOUT STREAMING
+=================
+
+User: "Explain Docker architecture"
+
+      [Waiting...]     [Waiting...]     [Waiting...]
+         2 sec            4 sec            6 sec
+
+      [COMPLETE RESPONSE APPEARS ALL AT ONCE]
+      "Docker uses a client-server architecture. The Docker
+       daemon runs on the host machine and manages containers.
+       The Docker client communicates with the daemon via REST API..."
+
+
+WITH STREAMING
+==============
+
+User: "Explain Docker architecture"
+
+      "Docker"
+      "Docker uses"
+      "Docker uses a"
+      "Docker uses a client-server"
+      "Docker uses a client-server architecture."
+      "Docker uses a client-server architecture. The"
+      "Docker uses a client-server architecture. The Docker"
+      ... (continues word by word)
+
+      Text appears as it's generated - feels faster!
+```
+
+### Why Use Streaming?
+
+```
+STREAMING BENEFITS
+==================
+
+1. PERCEIVED SPEED
+   ┌──────────────────────────────────────────────────┐
+   │ Without streaming: User stares at blank screen   │
+   │ With streaming: Text starts appearing instantly  │
+   │                                                  │
+   │ Same total time, but streaming FEELS faster!     │
+   └──────────────────────────────────────────────────┘
+
+2. EARLY FEEDBACK
+   ┌──────────────────────────────────────────────────┐
+   │ User can start reading while generation happens  │
+   │ Can cancel early if response is wrong direction  │
+   └──────────────────────────────────────────────────┘
+
+3. BETTER UX
+   ┌──────────────────────────────────────────────────┐
+   │ Mimics natural conversation (like someone typing)│
+   │ User knows the system is working                 │
+   └──────────────────────────────────────────────────┘
+```
+
+**How streaming works in code:**
 
 ```python
-"""
-Exercise 3: Streaming Responses
-===============================
-Goal: Show responses as they're generated
-"""
-
-import os
-from dotenv import load_dotenv
-from openai import OpenAI
-from rich.console import Console
-from rich.live import Live
-from rich.markdown import Markdown
-
-load_dotenv()
-client = OpenAI()
-console = Console()
+# Without streaming - wait for complete response
+response = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=messages,
+    stream=False  # Default
+)
+print(response.choices[0].message.content)  # All at once
 
 
-def stream_response(messages: list) -> str:
-    """
-    Stream a response from the LLM.
+# With streaming - get chunks as they're generated
+response = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=messages,
+    stream=True  # Enable streaming
+)
 
-    Args:
-        messages: The conversation history
+# Response is now an ITERATOR, not a complete response
+full_text = ""
+for chunk in response:
+    # Each chunk contains a small piece of text
+    if chunk.choices[0].delta.content:
+        text_piece = chunk.choices[0].delta.content
+        print(text_piece, end="", flush=True)  # Print without newline
+        full_text += text_piece
 
-    Returns:
-        The complete response
-    """
-    # TODO: Implement streaming
-    # Hint: Use stream=True in the API call
-    # The response will be an iterator of chunks
-
-    full_response = ""
-
-    response = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
-        messages=messages,
-        stream=True  # Enable streaming
-    )
-
-    # Process chunks as they arrive
-    for chunk in response:
-        if chunk.choices[0].delta.content:
-            content = chunk.choices[0].delta.content
-            print(content, end="", flush=True)
-            full_response += content
-
-    print()  # New line at end
-    return full_response
-
-
-if __name__ == "__main__":
-    messages = [
-        {"role": "system", "content": "You are a DevOps assistant."},
-        {"role": "user", "content": "Explain the Kubernetes architecture in detail."}
-    ]
-
-    print("Streaming response:\n")
-    response = stream_response(messages)
+print()  # Newline at the end
 ```
 
 ---
 
-## Exercise 4: Error Handling
+## Error Handling
 
-Real chatbots need to handle errors gracefully:
+### What Can Go Wrong?
+
+When calling APIs, many things can fail:
+
+```
+COMMON API ERRORS
+=================
+
+1. AUTHENTICATION ERROR
+   ┌──────────────────────────────────────────────────┐
+   │ Cause: Invalid or missing API key                │
+   │ Fix: Check .env file, regenerate key             │
+   └──────────────────────────────────────────────────┘
+
+2. RATE LIMIT ERROR
+   ┌──────────────────────────────────────────────────┐
+   │ Cause: Too many requests in short time           │
+   │ Fix: Wait and retry (exponential backoff)        │
+   └──────────────────────────────────────────────────┘
+
+3. CONNECTION ERROR
+   ┌──────────────────────────────────────────────────┐
+   │ Cause: Network issues, API server down           │
+   │ Fix: Retry, check internet connection            │
+   └──────────────────────────────────────────────────┘
+
+4. TIMEOUT ERROR
+   ┌──────────────────────────────────────────────────┐
+   │ Cause: Request took too long                     │
+   │ Fix: Retry, maybe use smaller prompt             │
+   └──────────────────────────────────────────────────┘
+
+5. INVALID REQUEST
+   ┌──────────────────────────────────────────────────┐
+   │ Cause: Wrong model name, bad parameters          │
+   │ Fix: Check model name, validate input            │
+   └──────────────────────────────────────────────────┘
+```
+
+### Exponential Backoff
+
+**Exponential backoff** is a retry strategy where you wait longer after each failure.
+
+```
+EXPONENTIAL BACKOFF EXPLAINED
+=============================
+
+Why not just retry immediately?
+- If everyone retries immediately, the server gets flooded
+- Makes the problem worse (more requests = more overload)
+
+Exponential backoff strategy:
+- Attempt 1 fails → Wait 1 second
+- Attempt 2 fails → Wait 2 seconds
+- Attempt 3 fails → Wait 4 seconds
+- Attempt 4 fails → Wait 8 seconds
+- ... (doubles each time)
+
+Visual:
+
+Attempt:    1       2       3       4
+            │       │       │       │
+            ▼       ▼       ▼       ▼
+         [FAIL]  [FAIL]  [FAIL]  [SUCCESS]
+            │       │       │       │
+Wait:      1s      2s      4s     DONE
+         ──────>──────>──────>
+
+Formula: wait_time = 2 ^ attempt_number
+         2^0=1, 2^1=2, 2^2=4, 2^3=8...
+```
+
+**Implementation:**
 
 ```python
-"""
-Exercise 4: Robust Error Handling
-=================================
-Goal: Handle API errors, rate limits, and network issues
-"""
-
-import os
 import time
-from dotenv import load_dotenv
-from openai import OpenAI, APIError, RateLimitError, APIConnectionError
 
-load_dotenv()
-client = OpenAI()
+def call_with_retry(func, max_retries=3):
+    """Call a function with exponential backoff retry."""
+    for attempt in range(max_retries):
+        try:
+            return func()  # Try to call the function
+        except RateLimitError:
+            if attempt == max_retries - 1:
+                raise  # Give up after max retries
 
-
-class RobustChatbot:
-    """Chatbot with proper error handling."""
-
-    def __init__(self):
-        self.messages = [
-            {"role": "system", "content": "You are a DevOps assistant."}
-        ]
-        self.max_retries = 3
-
-    def chat(self, user_message: str) -> str:
-        """
-        Send a message with retry logic.
-
-        Handles:
-        - Rate limiting (wait and retry)
-        - API errors (retry with backoff)
-        - Network errors (retry)
-        """
-        self.messages.append({"role": "user", "content": user_message})
-
-        for attempt in range(self.max_retries):
-            try:
-                response = client.chat.completions.create(
-                    model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
-                    messages=self.messages,
-                    temperature=0.3
-                )
-
-                assistant_message = response.choices[0].message.content
-                self.messages.append({"role": "assistant", "content": assistant_message})
-                return assistant_message
-
-            except RateLimitError:
-                # TODO: Handle rate limiting
-                # Wait and retry
-                wait_time = 2 ** attempt  # Exponential backoff
-                print(f"Rate limited. Waiting {wait_time}s...")
-                time.sleep(wait_time)
-
-            except APIConnectionError:
-                # TODO: Handle connection errors
-                print(f"Connection error. Retrying... ({attempt + 1}/{self.max_retries})")
-                time.sleep(1)
-
-            except APIError as e:
-                # TODO: Handle other API errors
-                print(f"API error: {e}")
-                if attempt == self.max_retries - 1:
-                    raise
-
-        return "Sorry, I'm having trouble connecting. Please try again."
-
-
-if __name__ == "__main__":
-    bot = RobustChatbot()
-
-    print("Testing error handling...")
-    response = bot.chat("What is Docker?")
-    print(f"Response: {response}")
+            wait_time = 2 ** attempt  # 1, 2, 4, 8...
+            print(f"Rate limited. Waiting {wait_time}s...")
+            time.sleep(wait_time)
 ```
 
 ---
 
 ## Context Window Management
 
-As conversations grow, you'll hit token limits. Here's how to manage:
+As conversations grow, you'll hit the token limit. Here's how to manage it:
 
-```python
-def manage_context(messages: list, max_tokens: int = 3000) -> list:
-    """
-    Keep conversation within token limits.
+```
+CONTEXT WINDOW PROBLEM
+======================
 
-    Strategy: Remove oldest messages (keep system prompt)
-    """
-    import tiktoken
+Start of conversation:
+┌───────────────────────────────────────────────────────┐
+│ Context Window (4096 tokens)                          │
+│ ┌─────────────────────────────────────────────────┐  │
+│ │ [system] 50 tokens                              │  │
+│ │ [user] 20 tokens                                │  │
+│ │ [assistant] 100 tokens                          │  │
+│ │                                                 │  │
+│ │           ... lots of room left ...             │  │
+│ │                                                 │  │
+│ └─────────────────────────────────────────────────┘  │
+│ Used: 170 tokens | Remaining: 3926 tokens             │
+└───────────────────────────────────────────────────────┘
 
-    encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+After many exchanges:
+┌───────────────────────────────────────────────────────┐
+│ Context Window (4096 tokens)                          │
+│ ┌─────────────────────────────────────────────────┐  │
+│ │ [system] 50 tokens                              │  │
+│ │ [user] message 1                                │  │
+│ │ [assistant] response 1                          │  │
+│ │ [user] message 2                                │  │
+│ │ [assistant] response 2                          │  │
+│ │ [user] message 3                                │  │
+│ │ [assistant] response 3                          │  │
+│ │ ... many more messages ...                      │  │
+│ │ [user] message 20                               │  │
+│ │ [assistant] response 20                         │  │
+│ └─────────────────────────────────────────────────┘  │
+│ Used: 3800 tokens | Remaining: 296 tokens ⚠️          │
+└───────────────────────────────────────────────────────┘
 
-    while True:
-        # Count total tokens
-        total = sum(len(encoding.encode(m["content"])) for m in messages)
+Problem: Not enough room for new response!
 
-        if total <= max_tokens:
-            break
 
-        # Remove oldest non-system message
-        if len(messages) > 2:  # Keep system + at least one exchange
-            messages.pop(1)
-        else:
-            break
+SOLUTION: Remove old messages
+┌───────────────────────────────────────────────────────┐
+│ Context Window (4096 tokens)                          │
+│ ┌─────────────────────────────────────────────────┐  │
+│ │ [system] 50 tokens         ← ALWAYS KEEP        │  │
+│ │ [user] message 15          ← Removed 1-14       │  │
+│ │ [assistant] response 15                         │  │
+│ │ [user] message 16                               │  │
+│ │ [assistant] response 16                         │  │
+│ │ ... recent messages ...                         │  │
+│ │ [user] message 20                               │  │
+│ │ [assistant] response 20                         │  │
+│ └─────────────────────────────────────────────────┘  │
+│ Used: 1500 tokens | Remaining: 2596 tokens ✓          │
+└───────────────────────────────────────────────────────┘
+```
 
-    return messages
+**Context management strategies:**
+
+| Strategy | Description | Pros | Cons |
+|----------|-------------|------|------|
+| **Sliding Window** | Keep last N messages | Simple, predictable | Loses old context |
+| **Token Budget** | Keep messages until token limit | Efficient | More complex |
+| **Summarization** | Summarize old messages | Preserves context | Extra API call |
+
+---
+
+## Hands-On Exercises
+
+### Exercise 1: Chatbot with History
+
+Create `exercises/ex1_chatbot_history.py` - a basic chatbot that maintains conversation context.
+
+**What you'll learn:**
+- How to store conversation history
+- How to add messages to history
+- How to build multi-turn conversations
+
+### Exercise 2: Rich CLI Interface
+
+Create `exercises/ex2_rich_interface.py` - add beautiful formatting to your chatbot.
+
+**What you'll learn:**
+- Using the Rich library
+- Creating panels and styled output
+- Markdown rendering
+
+### Exercise 3: Streaming Responses
+
+Create `exercises/ex3_streaming.py` - show responses as they're generated.
+
+**What you'll learn:**
+- How streaming works
+- Processing response chunks
+- Better user experience
+
+### Exercise 4: Error Handling
+
+Create `exercises/ex4_error_handling.py` - handle failures gracefully.
+
+**What you'll learn:**
+- Catching specific exceptions
+- Implementing retry logic
+- Exponential backoff
+
+### Exercise 5: Complete Chatbot
+
+Create `exercises/ex5_complete_chatbot.py` - combine everything into a production-ready chatbot.
+
+**What you'll learn:**
+- Putting it all together
+- Context window management
+- Building robust applications
+
+---
+
+## Running the Exercises
+
+```bash
+# Activate your virtual environment first!
+source .venv/bin/activate  # Linux/Mac
+# or
+.\.venv\Scripts\Activate.ps1  # Windows
+
+# Run each exercise
+python module-2-simple-chatbot/exercises/ex1_chatbot_history.py
+python module-2-simple-chatbot/exercises/ex2_rich_interface.py
+python module-2-simple-chatbot/exercises/ex3_streaming.py
+python module-2-simple-chatbot/exercises/ex4_error_handling.py
+python module-2-simple-chatbot/exercises/ex5_complete_chatbot.py
+
+# Or run the complete solution
+python module-2-simple-chatbot/solutions/complete_chatbot.py
 ```
 
 ---
 
-## Putting It All Together
+## Expected Output
 
-Create `exercises/ex5_complete_chatbot.py`:
+When you run the complete chatbot, you should see:
 
-```python
-"""
-Exercise 5: Complete Chatbot
-============================
-Goal: Combine all features into a production-ready chatbot
-"""
+```
+┌─────────────────────────────────────────────────────────┐
+│              DevOps Troubleshooting Chatbot              │
+│                                                          │
+│  I can help with Terraform, Kubernetes, Docker, and     │
+│  CI/CD issues. Paste your error message or describe     │
+│  your problem.                                           │
+│                                                          │
+│  Commands: 'quit' to exit, 'clear' to reset history     │
+└─────────────────────────────────────────────────────────┘
 
-import os
-import time
-from dotenv import load_dotenv
-from openai import OpenAI, RateLimitError, APIConnectionError
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.prompt import Prompt
-import tiktoken
+You: What is a Kubernetes pod?
 
-load_dotenv()
+┌──────────────────── DevOps Bot ─────────────────────────┐
+│                                                          │
+│ A **Kubernetes pod** is the smallest deployable unit    │
+│ in Kubernetes. Key points:                               │
+│                                                          │
+│ - Can contain one or more containers                    │
+│ - Containers in a pod share:                            │
+│   - Network namespace (same IP)                         │
+│   - Storage volumes                                     │
+│                                                          │
+│ Example command to see pods:                            │
+│ ```bash                                                 │
+│ kubectl get pods                                        │
+│ ```                                                     │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
 
+You: How do I see more details?
 
-class DevOpsChatbot:
-    """Complete DevOps chatbot with all features."""
-
-    SYSTEM_PROMPT = """You are an expert DevOps troubleshooting assistant.
-
-Your expertise includes:
-- Terraform (state management, errors, best practices)
-- Kubernetes (pod issues, deployments, networking)
-- Docker (builds, runtime, compose)
-- CI/CD (GitHub Actions, Jenkins, GitLab CI)
-- Cloud (AWS, GCP, Azure)
-
-When helping with errors:
-1. First understand the error message
-2. Explain what caused it
-3. Provide step-by-step solution
-4. Include code/commands when helpful
-5. Suggest prevention tips
-
-Format responses in Markdown for readability."""
-
-    def __init__(self):
-        self.client = OpenAI()
-        self.console = Console()
-        self.messages = [{"role": "system", "content": self.SYSTEM_PROMPT}]
-        self.max_context_tokens = 3000
-
-    def _count_tokens(self, text: str) -> int:
-        """Count tokens in text."""
-        encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-        return len(encoding.encode(text))
-
-    def _manage_context(self):
-        """Keep conversation within token limits."""
-        while True:
-            total = sum(self._count_tokens(m["content"]) for m in self.messages)
-            if total <= self.max_context_tokens or len(self.messages) <= 2:
-                break
-            self.messages.pop(1)
-
-    def chat(self, user_message: str) -> str:
-        """Send message and get response with error handling."""
-        self.messages.append({"role": "user", "content": user_message})
-        self._manage_context()
-
-        for attempt in range(3):
-            try:
-                response = self.client.chat.completions.create(
-                    model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
-                    messages=self.messages,
-                    temperature=0.2,
-                    max_tokens=1000
-                )
-
-                content = response.choices[0].message.content
-                self.messages.append({"role": "assistant", "content": content})
-                return content
-
-            except RateLimitError:
-                time.sleep(2 ** attempt)
-            except APIConnectionError:
-                time.sleep(1)
-
-        return "Sorry, I'm having trouble connecting. Please try again."
-
-    def run(self):
-        """Run the interactive chatbot."""
-        self.console.print(Panel(
-            "[bold green]DevOps Troubleshooting Chatbot[/bold green]\n\n"
-            "I can help with Terraform, Kubernetes, Docker, and CI/CD issues.\n"
-            "Paste your error message or describe your problem.\n\n"
-            "[dim]Commands: 'quit' to exit, 'clear' to reset[/dim]",
-            border_style="green"
-        ))
-
-        while True:
-            try:
-                user_input = Prompt.ask("\n[bold cyan]You[/bold cyan]")
-
-                if not user_input.strip():
-                    continue
-                if user_input.lower() == 'quit':
-                    break
-                if user_input.lower() == 'clear':
-                    self.messages = [self.messages[0]]
-                    self.console.print("[yellow]Cleared.[/yellow]")
-                    continue
-
-                with self.console.status("[green]Analyzing..."):
-                    response = self.chat(user_input)
-
-                self.console.print(Panel(
-                    Markdown(response),
-                    title="[bold green]DevOps Bot[/bold green]",
-                    border_style="green"
-                ))
-
-            except KeyboardInterrupt:
-                break
-
-        self.console.print("[yellow]Goodbye![/yellow]")
-
-
-if __name__ == "__main__":
-    DevOpsChatbot().run()
+┌──────────────────── DevOps Bot ─────────────────────────┐
+│                                                          │
+│ To see more details about your pods:                    │
+│                                                          │
+│ ```bash                                                 │
+│ # Describe a specific pod                               │
+│ kubectl describe pod <pod-name>                         │
+│                                                          │
+│ # See all pods with more columns                        │
+│ kubectl get pods -o wide                                │
+│ ```                                                     │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Key Takeaways
 
-1. **History is essential** - LLMs don't remember; you must send full context
-2. **Manage context size** - Remove old messages to stay within limits
-3. **Handle errors** - Network issues and rate limits will happen
-4. **User experience matters** - Rich formatting and streaming improve UX
-5. **System prompts shape behavior** - Invest time in crafting good prompts
+1. **History is YOUR responsibility** - LLMs don't remember; you must send full conversation history with each API call.
+
+2. **Classes organize code** - Use classes to bundle data (history) with behavior (chat method).
+
+3. **Rich makes CLI beautiful** - The Rich library adds colors, panels, and markdown rendering.
+
+4. **Streaming improves UX** - Show responses word-by-word for better perceived speed.
+
+5. **Errors will happen** - Always implement retry logic with exponential backoff.
+
+6. **Manage context size** - Remove old messages to stay within token limits.
 
 ---
 
 ## What's Next?
 
-Our chatbot is great, but it can only use knowledge from its training data. In **Module 3**, we'll learn about RAG (Retrieval-Augmented Generation) to give our chatbot access to real DevOps documentation!
+Our chatbot works great, but it only knows what the LLM learned during training. What if we want it to answer questions about:
+- Our company's specific Terraform modules?
+- Internal Kubernetes configurations?
+- Custom CI/CD pipelines?
 
-```bash
-cd ../module-3-rag-fundamentals
-```
+In **Module 3**, we'll learn about **RAG (Retrieval-Augmented Generation)** - a technique to give our chatbot access to external knowledge!
+
+Continue to: [Module 3: RAG Fundamentals →](../module-3-rag-fundamentals/README.md)
